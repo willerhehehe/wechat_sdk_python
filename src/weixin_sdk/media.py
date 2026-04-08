@@ -96,6 +96,50 @@ def _build_media_item(kind: str, uploaded: UploadedFileInfo, file_name: str | No
     }
 
 
+def _infer_extension_from_bytes(item: dict[str, Any], raw: bytes) -> str:
+    item_type = item.get("type")
+
+    if item_type == ITEM_TYPE_IMAGE:
+        if raw.startswith(b"\xff\xd8\xff"):
+            return ".jpg"
+        if raw.startswith(b"\x89PNG\r\n\x1a\n"):
+            return ".png"
+        if raw.startswith((b"GIF87a", b"GIF89a")):
+            return ".gif"
+        if raw.startswith(b"RIFF") and raw[8:12] == b"WEBP":
+            return ".webp"
+        if raw.startswith(b"BM"):
+            return ".bmp"
+        return ".bin"
+
+    if item_type == ITEM_TYPE_VIDEO:
+        if len(raw) > 12 and raw[4:8] == b"ftyp":
+            return ".mp4"
+        return ".bin"
+
+    if item_type == ITEM_TYPE_VOICE:
+        if raw.startswith(b"#!SILK"):
+            return ".silk"
+        if raw.startswith(b"RIFF") and raw[8:12] == b"WAVE":
+            return ".wav"
+        if raw.startswith(b"ID3"):
+            return ".mp3"
+        return ".bin"
+
+    if item_type == ITEM_TYPE_FILE:
+        file_item = item.get("file_item") or {}
+        original_name = file_item.get("file_name")
+        if isinstance(original_name, str) and Path(original_name).suffix:
+            return Path(original_name).suffix
+        if raw.startswith(b"%PDF-"):
+            return ".pdf"
+        if raw.startswith(b"PK\x03\x04"):
+            return ".zip"
+        return ".bin"
+
+    return ".bin"
+
+
 class MediaClient:
     def __init__(self, account: "AccountClient") -> None:
         self.account = account
@@ -263,6 +307,9 @@ class MediaClient:
         if aes_key_b64:
             raw = decrypt_aes_ecb(raw, parse_aes_key_base64(aes_key_b64))
         output_path = Path(output_dir).expanduser().resolve() / resolve_output_filename(item)
+        suffix = _infer_extension_from_bytes(item, raw)
+        if output_path.suffix.lower() != suffix.lower():
+            output_path = output_path.with_suffix(suffix)
         output_path.parent.mkdir(parents=True, exist_ok=True)
         output_path.write_bytes(raw)
         return output_path
