@@ -1,0 +1,6 @@
+.venv/
+research/
+src/*.egg-info/
+tests/__pycache__/
+__pycache__/
+*.pyc
